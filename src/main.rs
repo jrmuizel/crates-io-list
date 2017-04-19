@@ -7,6 +7,7 @@ fn main() {
             index.fetch().expect("Could not fetch crates.io index");
     }
     let mut map: HashMap<_, u32> =  HashMap::new();
+    let mut reverse_dep_map =  HashMap::new();
     let mut time_map = HashMap::new();
     run("_index".to_string(), &mut time_map);
     for path in index.crate_index_paths() {
@@ -15,13 +16,15 @@ fn main() {
         println!("crate name: {}", latest_version.name());
         let path_str = path.to_str().unwrap().to_string()["_index/".len()..].to_string();
 
-        if (true ||  time_map.contains_key(&path_str)) {
+        if (time_map.contains_key(&path_str)) {
         for dep in latest_version.dependencies() {
-                    //let time = time_map.get(&path_str).unwrap();
-        //print_time(time, "Date: ");
+                    let time = time_map.get(&path_str).unwrap();
+            print_time(time, "Date: ");
             //println!("dep: {}", dep.name());
             let mut count = map.entry(dep.name().to_string()).or_insert(0);
             *count += 1;
+            let mut deps = reverse_dep_map.entry(dep.name().to_string()).or_insert(Vec::new());
+            deps.push(latest_version.name().to_string());
         }
         }
 
@@ -32,6 +35,9 @@ fn main() {
     sorted.sort_by(|a, b| a.1.cmp(b.1));
     for (name, count) in sorted {
         println!("{}. {} {}", total, name, count);
+        for dep in reverse_dep_map.get(name).unwrap() {
+            println!("   [{}](https://crates.io/crates/{})", dep, dep);
+        }
         total -= 1;
     }
 }
@@ -42,12 +48,13 @@ extern crate time;
 use std::str;
 use git2::{Repository, Signature, Commit, ObjectType, Time, DiffOptions};
 use git2::{Pathspec, Error, DiffFormat};
+use git2::Delta;
 struct Args {
     arg_spec: Vec<String>,
 }
 
 fn run(repo_path: String, times: &mut HashMap<String, Time>) -> Result<(), Error> {
-    return Ok(());
+    //return Ok(());
     let repo = try!(Repository::open(repo_path));
     let mut revwalk = try!(repo.revwalk());
 
@@ -71,7 +78,7 @@ fn run(repo_path: String, times: &mut HashMap<String, Time>) -> Result<(), Error
         ($e:expr) => (match $e { Ok(t) => t, Err(e) => continue })
     }
     use time::strptime;
-    let t_before = strptime("2017", "%Y").unwrap();
+    let t_before = strptime("2017 3", "%Y %m").unwrap();
     for id in revwalk {
         let id = filter_try!(id);
         let commit = filter_try!(repo.find_commit(id));
@@ -93,14 +100,17 @@ fn run(repo_path: String, times: &mut HashMap<String, Time>) -> Result<(), Error
                             let m = diff.foreach(&mut |file, _progress| {
                                     let author = commit.author();
                                     let key = file.old_file().path().unwrap().to_str().unwrap().to_string();
-                                    let e = times.entry(key);
-                                    let t = to_time(&author.when());
+                                                                        let t = to_time(&author.when());
+
                                     if t < t_before {
                                         return false;
                                     }
+                                    if file.status() == Delta::Added {
+                                    let e = times.entry(key);
 
                                     e.or_insert(author.when());
                                     print_time(&author.when(), "Date:   ");
+                                    }
                                 //println!("{:?}", file.old_file().path());
                                 true
                             }, None, None, None);
